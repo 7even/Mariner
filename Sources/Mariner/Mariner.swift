@@ -2,143 +2,92 @@ import Cocoa
 import WebKit
 import Markdown
 
-class AppDelegate: NSObject, NSApplicationDelegate {
-    var window: NSWindow!
+// MARK: - Markdown Document
+
+@objc(MarkdownDocument)
+class MarkdownDocument: NSDocument {
     var webView: WKWebView!
-    var currentFilePath: String?
     var fileSystemSource: DispatchSourceFileSystemObject?
+    var markdownContent: String = ""
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // Setup menu bar
-        setupMenuBar()
+    override class var autosavesInPlace: Bool {
+        return false
+    }
 
-        // Create window
-        let windowRect = NSRect(x: 100, y: 100, width: 900, height: 700)
-        window = NSWindow(
-            contentRect: windowRect,
+    override class var readableTypes: [String] {
+        return ["net.daringfireball.markdown", "public.plain-text", "public.text"]
+    }
+
+    override class func canConcurrentlyReadDocuments(ofType typeName: String) -> Bool {
+        return true
+    }
+
+    override func makeWindowControllers() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 900, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Mariner - Markdown Viewer"
-        window.center()
 
         // Create WKWebView
         webView = WKWebView(frame: window.contentView!.bounds)
         webView.autoresizingMask = [.width, .height]
         window.contentView?.addSubview(webView)
 
-        // Show window
-        window.makeKeyAndOrderFront(nil)
+        let windowController = NSWindowController(window: window)
+        addWindowController(windowController)
 
-        // Activate app
-        NSApp.activate(ignoringOtherApps: true)
+        // Show the window
+        windowController.showWindow(nil)
+        window.center()
 
-        // Show file picker
-        showFilePicker()
-    }
+        // Set window title
+        updateWindowTitle()
 
-    func setupMenuBar() {
-        let mainMenu = NSMenu()
+        // Render initial content
+        renderMarkdown()
 
-        // App Menu
-        let appMenuItem = NSMenuItem()
-        let appMenu = NSMenu()
-        appMenuItem.submenu = appMenu
-
-        appMenu.addItem(withTitle: "About Mariner", action: #selector(showAbout), keyEquivalent: "")
-        appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Quit Mariner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-
-        mainMenu.addItem(appMenuItem)
-
-        // File Menu
-        let fileMenuItem = NSMenuItem()
-        let fileMenu = NSMenu(title: "File")
-        fileMenuItem.submenu = fileMenu
-
-        fileMenu.addItem(withTitle: "Open...", action: #selector(openFile), keyEquivalent: "o")
-        fileMenu.addItem(NSMenuItem.separator())
-        fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-
-        mainMenu.addItem(fileMenuItem)
-
-        // Edit Menu
-        let editMenuItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
-        editMenuItem.submenu = editMenu
-
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-
-        mainMenu.addItem(editMenuItem)
-
-        // Window Menu
-        let windowMenuItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
-        windowMenuItem.submenu = windowMenu
-
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
-
-        mainMenu.addItem(windowMenuItem)
-
-        NSApp.mainMenu = mainMenu
-    }
-
-    @objc func openFile() {
-        showFilePicker()
-    }
-
-    @objc func showAbout() {
-        let alert = NSAlert()
-        alert.messageText = "Mariner"
-        alert.informativeText = "A native macOS markdown viewer with GitHub-style rendering.\n\nVersion 1.0"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-
-    func showFilePicker() {
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Choose a Markdown file"
-        openPanel.allowedFileTypes = ["md"]
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-
-        openPanel.begin { [weak self] response in
-            if response == .OK, let url = openPanel.url {
-                self?.loadMarkdownFile(at: url.path)
-            }
+        // Start watching file for changes
+        if let fileURL = fileURL {
+            watchFile(at: fileURL.path)
         }
     }
 
-    func loadMarkdownFile(at path: String) {
-        currentFilePath = path
-        window.title = "Mariner - \((path as NSString).lastPathComponent)"
-
-        // Stop watching previous file
-        fileSystemSource?.cancel()
-
-        // Render markdown
-        renderMarkdown(at: path)
-
-        // Start watching file for changes
-        watchFile(at: path)
+    override func read(from url: URL, ofType typeName: String) throws {
+        markdownContent = try String(contentsOf: url, encoding: .utf8)
     }
 
-    func renderMarkdown(at path: String, retryCount: Int = 0) {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+    override func data(ofType typeName: String) throws -> Data {
+        // Read-only viewer, no saving
+        return markdownContent.data(using: .utf8) ?? Data()
+    }
+
+    func updateWindowTitle() {
+        if let fileName = fileURL?.lastPathComponent {
+            windowControllers.first?.window?.title = "Mariner - \(fileName)"
+        } else {
+            windowControllers.first?.window?.title = "Mariner"
+        }
+    }
+
+    func renderMarkdown(retryCount: Int = 0) {
+        guard let url = fileURL else { return }
+
+        // Re-read file content
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
             // If we fail to read, retry up to 3 times with increasing delays
             if retryCount < 3 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05 * Double(retryCount + 1)) {
-                    self.renderMarkdown(at: path, retryCount: retryCount + 1)
+                    self.renderMarkdown(retryCount: retryCount + 1)
                 }
             } else {
-                webView.loadHTMLString("<h1>Error</h1><p>Could not read file</p>", baseURL: nil)
+                webView?.loadHTMLString("<h1>Error</h1><p>Could not read file</p>", baseURL: nil)
             }
             return
         }
+
+        markdownContent = content
 
         // Parse markdown using swift-markdown
         let document = Document(parsing: content)
@@ -178,7 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         </html>
         """
 
-        webView.loadHTMLString(fullHTML, baseURL: nil)
+        webView?.loadHTMLString(fullHTML, baseURL: nil)
     }
 
     func watchFile(at path: String) {
@@ -194,24 +143,103 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         source.setEventHandler { [weak self] in
             // Add a small delay to let the file finish writing
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self?.renderMarkdown(at: path)
+                self?.renderMarkdown()
             }
         }
 
         source.setCancelHandler {
-            close(fileDescriptor)
+            Darwin.close(fileDescriptor)
         }
 
         source.resume()
         fileSystemSource = source
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
+    override func close() {
+        fileSystemSource?.cancel()
+        fileSystemSource = nil
+        super.close()
     }
 }
 
-// Simple HTML renderer for swift-markdown
+// MARK: - App Delegate
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Setup menu bar
+        setupMenuBar()
+
+        // Show open panel on launch
+        DispatchQueue.main.async {
+            NSDocumentController.shared.openDocument(nil)
+        }
+    }
+
+    func setupMenuBar() {
+        let mainMenu = NSMenu()
+
+        // App Menu
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenuItem.submenu = appMenu
+
+        appMenu.addItem(withTitle: "About Mariner", action: #selector(showAbout), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle: "Quit Mariner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        mainMenu.addItem(appMenuItem)
+
+        // File Menu
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        fileMenuItem.submenu = fileMenu
+
+        fileMenu.addItem(withTitle: "Open...", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+
+        mainMenu.addItem(fileMenuItem)
+
+        // Edit Menu
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenuItem.submenu = editMenu
+
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        mainMenu.addItem(editMenuItem)
+
+        // Window Menu
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenuItem.submenu = windowMenu
+
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
+
+        mainMenu.addItem(windowMenuItem)
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    @objc func showAbout() {
+        let alert = NSAlert()
+        alert.messageText = "Mariner"
+        alert.informativeText = "A native macOS markdown viewer with GitHub-style rendering.\n\nVersion 1.0"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // Keep app running like TextEdit, Pages, etc.
+        return false
+    }
+}
+
+// MARK: - HTML Renderer
+
 struct HTMLRenderer {
     static func renderHTML(from document: Document) -> String {
         var html = ""
@@ -324,7 +352,8 @@ struct HTMLRenderer {
     }
 }
 
-// GitHub Markdown CSS (minimal version for now)
+// MARK: - GitHub CSS
+
 let githubMarkdownCSS = """
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -447,7 +476,8 @@ body {
 }
 """
 
-// Main entry point
+// MARK: - Main Entry Point
+
 @main
 struct MarinerApp {
     static func main() {
