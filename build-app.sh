@@ -24,5 +24,8 @@ cp .build/debug/Mariner "$APP_DIR/MacOS/Mariner"
 # Copy Info.plist
 cp Info.plist "$APP_DIR/Info.plist"
 
+# Copy app icon
+cp Mariner.icns "$APP_DIR/Resources/Mariner.icns"
+
 echo "App bundle created: Mariner.app"
 echo "To run: open Mariner.app"
