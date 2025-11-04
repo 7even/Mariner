@@ -53,6 +53,13 @@ class MarkdownDocument: NSDocument {
         if let fileURL = fileURL {
             watchFile(at: fileURL.path)
         }
+
+        // Update recent files menu after document is opened
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            DispatchQueue.main.async {
+                appDelegate.updateRecentFilesMenu()
+            }
+        }
     }
 
     override func read(from url: URL, ofType typeName: String) throws {
@@ -192,6 +199,8 @@ class MarkdownDocument: NSDocument {
 // MARK: - App Delegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    var recentFilesMenu: NSMenu?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup menu bar
         setupMenuBar()
@@ -200,6 +209,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             NSDocumentController.shared.openDocument(nil)
         }
+    }
+
+    func updateRecentFilesMenu() {
+        guard let menu = recentFilesMenu else { return }
+
+        // Remove all existing items except Clear Menu
+        while menu.items.count > 1 {
+            menu.removeItem(at: 0)
+        }
+
+        // Add recent document menu items
+        let urls = NSDocumentController.shared.recentDocumentURLs
+        for url in urls {
+            let item = NSMenuItem(title: url.lastPathComponent, action: #selector(AppDelegate.openRecentDocument(_:)), keyEquivalent: "")
+            item.representedObject = url
+            item.target = self
+            menu.insertItem(item, at: menu.items.count - 1)
+        }
+
+        // Add separator if there are recent files
+        if !urls.isEmpty {
+            menu.insertItem(NSMenuItem.separator(), at: menu.items.count - 1)
+        }
+    }
+
+    @objc func openRecentDocument(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+    }
+
+    @objc func clearRecentDocuments(_ sender: Any) {
+        NSDocumentController.shared.clearRecentDocuments(sender)
+        updateRecentFilesMenu()
     }
 
     func setupMenuBar() {
@@ -222,6 +264,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenuItem.submenu = fileMenu
 
         fileMenu.addItem(withTitle: "Open...", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
+
+        // Open Recent submenu
+        fileMenu.addItem(NSMenuItem.separator())
+
+        // Create Open Recent menu with standard setup
+        let openRecentMenuItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        fileMenu.addItem(openRecentMenuItem)
+
+        // Create the submenu
+        let openRecentMenu = NSMenu(title: "Open Recent")
+        openRecentMenuItem.submenu = openRecentMenu
+
+        // Store reference for updating
+        recentFilesMenu = openRecentMenu
+
+        // Add clear menu item (always present)
+        let clearItem = openRecentMenu.addItem(withTitle: "Clear Menu", action: #selector(AppDelegate.clearRecentDocuments(_:)), keyEquivalent: "")
+        clearItem.target = self
+
+        // Populate with current recent files
+        updateRecentFilesMenu()
+
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
