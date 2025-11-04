@@ -16,7 +16,7 @@ class MarkdownDocument: NSDocument {
     }
 
     override class var readableTypes: [String] {
-        return ["net.daringfireball.markdown", "public.plain-text", "public.text"]
+        return ["net.daringfireball.markdown"]
     }
 
     override class func canConcurrentlyReadDocuments(ofType typeName: String) -> Bool {

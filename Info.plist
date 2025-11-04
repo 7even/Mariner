@@ -39,7 +39,6 @@
             <key>LSItemContentTypes</key>
             <array>
                 <string>net.daringfireball.markdown</string>
-                <string>public.plain-text</string>
             </array>
             <key>LSHandlerRank</key>
             <string>Alternate</string>
