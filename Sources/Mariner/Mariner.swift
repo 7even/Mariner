@@ -112,8 +112,9 @@ class MarkdownDocument: NSDocument {
             let document = cmark_parser_finish(parser)
             defer { cmark_node_free(document) }
 
-            // Render to HTML
-            let htmlCString = cmark_render_html(document, CMARK_OPT_DEFAULT, nil)
+            // Render to HTML with extensions
+            let extensions = cmark_parser_get_syntax_extensions(parser)
+            let htmlCString = cmark_render_html(document, CMARK_OPT_DEFAULT, extensions)
             defer { free(htmlCString) }
             return String(cString: htmlCString!)
         }
@@ -404,6 +405,33 @@ body {
 
 .markdown-body strong {
     font-weight: 600;
+}
+
+.markdown-body table {
+    border-spacing: 0;
+    border-collapse: collapse;
+    margin-top: 0;
+    margin-bottom: 16px;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+    padding: 6px 13px;
+    border: 1px solid #dfe2e5;
+}
+
+.markdown-body table th {
+    font-weight: 600;
+    background-color: #f6f8fa;
+}
+
+.markdown-body table tr {
+    background-color: #ffffff;
+    border-top: 1px solid #c6cbd1;
+}
+
+.markdown-body table tr:nth-child(2n) {
+    background-color: #f6f8fa;
 }
 """
 
