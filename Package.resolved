@@ -8,15 +8,6 @@
         "branch" : "gfm",
         "revision" : "924936d0427cb25a61169739a7660230bffa6ea6"
       }
-    },
-    {
-      "identity" : "swift-markdown",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-markdown.git",
-      "state" : {
-        "branch" : "main",
-        "revision" : "679b5310afb846d975e1fed73739b9f7046887c1"
-      }
     }
   ],
   "version" : 2

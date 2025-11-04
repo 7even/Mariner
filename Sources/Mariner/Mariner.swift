@@ -1,6 +1,7 @@
 import Cocoa
 import WebKit
-import Markdown
+import cmark_gfm
+import cmark_gfm_extensions
 
 // MARK: - Markdown Document
 
@@ -89,9 +90,33 @@ class MarkdownDocument: NSDocument {
 
         markdownContent = content
 
-        // Parse markdown using swift-markdown
-        let document = Document(parsing: content)
-        let html = HTMLRenderer.renderHTML(from: document)
+        // Parse markdown using cmark-gfm with all GitHub extensions
+        let html = content.withCString { cString -> String in
+            // Register GFM extensions
+            cmark_gfm_core_extensions_ensure_registered()
+
+            // Create parser with GFM extensions
+            let parser = cmark_parser_new(CMARK_OPT_DEFAULT)
+            defer { cmark_parser_free(parser) }
+
+            // Attach all GFM extensions
+            let extensionNames = ["table", "strikethrough", "autolink", "tagfilter", "tasklist"]
+            for name in extensionNames {
+                if let ext = cmark_find_syntax_extension(name) {
+                    cmark_parser_attach_syntax_extension(parser, ext)
+                }
+            }
+
+            // Parse the markdown
+            cmark_parser_feed(parser, cString, strlen(cString))
+            let document = cmark_parser_finish(parser)
+            defer { cmark_node_free(document) }
+
+            // Render to HTML
+            let htmlCString = cmark_render_html(document, CMARK_OPT_DEFAULT, nil)
+            defer { free(htmlCString) }
+            return String(cString: htmlCString!)
+        }
 
         // Create full HTML with GitHub styling
         let fullHTML = """
@@ -122,6 +147,7 @@ class MarkdownDocument: NSDocument {
                 document.querySelectorAll('pre code').forEach((block) => {
                     hljs.highlightElement(block);
                 });
+
             </script>
         </body>
         </html>
@@ -238,120 +264,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// MARK: - HTML Renderer
-
-struct HTMLRenderer {
-    static func renderHTML(from document: Document) -> String {
-        var html = ""
-
-        for child in document.children {
-            html += renderBlock(child)
-        }
-
-        return html
-    }
-
-    static func renderBlock(_ markup: Markup) -> String {
-        switch markup {
-        case let heading as Heading:
-            let level = heading.level
-            let content = renderInlineChildren(heading)
-            return "<h\(level)>\(content)</h\(level)>\n"
-
-        case let paragraph as Paragraph:
-            let content = renderInlineChildren(paragraph)
-            return "<p>\(content)</p>\n"
-
-        case let list as UnorderedList:
-            var items = ""
-            for item in list.listItems {
-                items += "<li>\(renderInlineChildren(item))</li>\n"
-            }
-            return "<ul>\n\(items)</ul>\n"
-
-        case let list as OrderedList:
-            var items = ""
-            for item in list.listItems {
-                items += "<li>\(renderInlineChildren(item))</li>\n"
-            }
-            return "<ol>\n\(items)</ol>\n"
-
-        case let code as CodeBlock:
-            let language = code.language ?? ""
-            let codeContent = code.code.trimmingCharacters(in: .newlines)
-            return "<pre><code class=\"language-\(language)\">\(escapeHTML(codeContent))</code></pre>\n"
-
-        case let quote as BlockQuote:
-            var content = ""
-            for child in quote.children {
-                content += renderBlock(child)
-            }
-            return "<blockquote>\n\(content)</blockquote>\n"
-
-        case _ as ThematicBreak:
-            return "<hr>\n"
-
-        default:
-            var content = ""
-            for child in markup.children {
-                content += renderBlock(child)
-            }
-            return content
-        }
-    }
-
-    static func renderInlineChildren(_ markup: Markup) -> String {
-        var html = ""
-        for child in markup.children {
-            html += renderInline(child)
-        }
-        return html
-    }
-
-    static func renderInline(_ markup: Markup) -> String {
-        switch markup {
-        case let text as Text:
-            return escapeHTML(text.string)
-
-        case let strong as Strong:
-            return "<strong>\(renderInlineChildren(strong))</strong>"
-
-        case let emphasis as Emphasis:
-            return "<em>\(renderInlineChildren(emphasis))</em>"
-
-        case let code as InlineCode:
-            return "<code>\(escapeHTML(code.code))</code>"
-
-        case let link as Link:
-            let destination = link.destination ?? ""
-            return "<a href=\"\(escapeHTML(destination))\">\(renderInlineChildren(link))</a>"
-
-        case let image as Image:
-            let source = image.source ?? ""
-            let title = image.title ?? ""
-            return "<img src=\"\(escapeHTML(source))\" alt=\"\(renderInlineChildren(image))\" title=\"\(escapeHTML(title))\">"
-
-        case _ as LineBreak:
-            return "<br>"
-
-        case _ as SoftBreak:
-            return " "
-
-        default:
-            return renderInlineChildren(markup)
-        }
-    }
-
-    static func escapeHTML(_ string: String) -> String {
-        return string
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&#39;")
-    }
-}
-
 // MARK: - GitHub CSS
 
 let githubMarkdownCSS = """
@@ -449,6 +361,25 @@ body {
 
 .markdown-body li {
     margin-bottom: 0.25em;
+}
+
+/* Task list styling - target any li containing a checkbox */
+.markdown-body li:has(> input[type="checkbox"]) {
+    list-style-type: none;
+}
+
+.markdown-body li > input[type="checkbox"] {
+    margin-right: 0.5em;
+    margin-left: -2.2em;
+    vertical-align: middle;
+    width: 16px;
+    height: 16px;
+    cursor: default;
+}
+
+.markdown-body li > input[type="checkbox"]:checked {
+    background-color: #0366d6;
+    border-color: #0366d6;
 }
 
 .markdown-body blockquote {

@@ -9,13 +9,14 @@ let package = Package(
         .macOS(.v12)
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-markdown.git", branch: "main"),
+        .package(url: "https://github.com/swiftlang/swift-cmark.git", branch: "gfm"),
     ],
     targets: [
         .executableTarget(
             name: "Mariner",
             dependencies: [
-                .product(name: "Markdown", package: "swift-markdown")
+                .product(name: "cmark-gfm", package: "swift-cmark"),
+                .product(name: "cmark-gfm-extensions", package: "swift-cmark")
             ]),
         .testTarget(
             name: "MarinerTests",
