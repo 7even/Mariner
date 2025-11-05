@@ -26,7 +26,7 @@ A native macOS markdown viewer with GitHub-style rendering and live preview.
 
 2. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/Mariner.git
+   git clone https://github.com/7even/Mariner.git
    cd Mariner
    ```
 

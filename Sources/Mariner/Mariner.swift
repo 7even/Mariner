@@ -126,6 +126,9 @@ class MarkdownDocument: NSDocument {
             return String(cString: htmlCString!)
         }
 
+        // Convert local images to base64 data URLs
+        let htmlWithEmbeddedImages = embedLocalImages(html: html, baseDirectory: url.deletingLastPathComponent())
+
         // Create full HTML with GitHub styling
         let fullHTML = """
         <!DOCTYPE html>
@@ -148,7 +151,7 @@ class MarkdownDocument: NSDocument {
         </head>
         <body>
             <article class="markdown-body">
-                \(html)
+                \(htmlWithEmbeddedImages)
             </article>
             <script>
                 // Apply syntax highlighting to all code blocks
@@ -161,7 +164,68 @@ class MarkdownDocument: NSDocument {
         </html>
         """
 
-        webView?.loadHTMLString(fullHTML, baseURL: nil)
+        // Load HTML with baseURL set to the markdown's directory
+        // This allows loading remote images (http/https) while base64 handles local images
+        webView?.loadHTMLString(fullHTML, baseURL: url.deletingLastPathComponent())
+    }
+
+    func embedLocalImages(html: String, baseDirectory: URL) -> String {
+        var processedHTML = html
+
+        // Pattern to match img tags with src attributes
+        let pattern = #"<img\s+[^>]*src="([^"]+)"[^>]*>"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return html
+        }
+
+        let matches = regex.matches(in: html, options: [], range: NSRange(html.startIndex..., in: html))
+
+        // Process matches in reverse to maintain string indices
+        for match in matches.reversed() {
+            if match.numberOfRanges >= 2 {
+                let srcRange = match.range(at: 1)
+                if let range = Range(srcRange, in: html) {
+                    let imagePath = String(html[range])
+
+                    // Skip if it's already a URL (http://, https://, data:)
+                    if imagePath.hasPrefix("http://") ||
+                       imagePath.hasPrefix("https://") ||
+                       imagePath.hasPrefix("data:") {
+                        continue
+                    }
+
+                    // Construct full path to image
+                    let imageURL = baseDirectory.appendingPathComponent(imagePath)
+
+                    // Convert to base64 if file exists
+                    if let imageData = try? Data(contentsOf: imageURL),
+                       let base64String = imageData.base64EncodedString() as String? {
+
+                        // Determine MIME type from file extension
+                        let ext = imageURL.pathExtension.lowercased()
+                        let mimeType: String
+                        switch ext {
+                        case "jpg", "jpeg": mimeType = "image/jpeg"
+                        case "png": mimeType = "image/png"
+                        case "gif": mimeType = "image/gif"
+                        case "svg": mimeType = "image/svg+xml"
+                        case "webp": mimeType = "image/webp"
+                        default: mimeType = "image/png"
+                        }
+
+                        let dataURL = "data:\(mimeType);base64,\(base64String)"
+
+                        // Replace the src value
+                        if let htmlRange = Range(srcRange, in: processedHTML) {
+                            processedHTML.replaceSubrange(htmlRange, with: dataURL)
+                        }
+                    }
+                }
+            }
+        }
+
+        return processedHTML
     }
 
     func watchFile(at path: String) {
@@ -175,9 +239,22 @@ class MarkdownDocument: NSDocument {
         )
 
         source.setEventHandler { [weak self] in
+            guard let self = self else { return }
+
+            let flags = source.data
+
             // Add a small delay to let the file finish writing
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self?.renderMarkdown()
+                self.renderMarkdown()
+
+                // If file was deleted or renamed, re-establish watch
+                if flags.contains(.delete) || flags.contains(.rename) {
+                    self.fileSystemSource?.cancel()
+                    self.fileSystemSource = nil
+                    if let fileURL = self.fileURL {
+                        self.watchFile(at: fileURL.path)
+                    }
+                }
             }
         }
 
@@ -465,6 +542,12 @@ body {
 .markdown-body img {
     max-width: 100%;
     box-sizing: content-box;
+}
+
+/* Standalone images (like logos) in their own paragraph */
+.markdown-body p > img:only-child {
+    display: block;
+    margin: 0 auto;
 }
 
 .markdown-body strong {
