@@ -10,6 +10,7 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
     var webView: WKWebView!
     var fileSystemSource: DispatchSourceFileSystemObject?
     var markdownContent: String = ""
+    var savedScrollPosition: CGFloat = 0
 
     override class var autosavesInPlace: Bool {
         return false
@@ -165,9 +166,16 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
         </html>
         """
 
-        // Load HTML with baseURL set to the markdown's directory
-        // This allows loading remote images (http/https) while base64 handles local images
-        webView?.loadHTMLString(fullHTML, baseURL: url.deletingLastPathComponent())
+        // Save scroll position before reloading
+        webView?.evaluateJavaScript("window.pageYOffset") { [weak self] result, error in
+            if let scrollY = result as? CGFloat {
+                self?.savedScrollPosition = scrollY
+            }
+
+            // Load HTML with baseURL set to the markdown's directory
+            // This allows loading remote images (http/https) while base64 handles local images
+            self?.webView?.loadHTMLString(fullHTML, baseURL: url.deletingLastPathComponent())
+        }
     }
 
     func embedLocalImages(html: String, baseDirectory: URL) -> String {
@@ -291,6 +299,13 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
         }
 
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Restore scroll position after page loads
+        if savedScrollPosition > 0 {
+            webView.evaluateJavaScript("window.scrollTo(0, \(savedScrollPosition))")
+        }
     }
 }
 
