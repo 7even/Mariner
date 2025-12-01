@@ -11,6 +11,7 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
     var fileSystemSource: DispatchSourceFileSystemObject?
     var markdownContent: String = ""
     var savedScrollPosition: CGFloat = 0
+    var isInitialLoad = true
 
     override class var autosavesInPlace: Bool {
         return false
@@ -47,6 +48,12 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
 
         // Set window title
         updateWindowTitle()
+
+        // Load saved scroll position from UserDefaults
+        if let fileURL = fileURL {
+            let key = "scroll_\(fileURL.path)"
+            savedScrollPosition = CGFloat(UserDefaults.standard.double(forKey: key))
+        }
 
         // Render initial content
         renderMarkdown()
@@ -166,15 +173,22 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
         </html>
         """
 
-        // Save scroll position before reloading
-        webView?.evaluateJavaScript("window.pageYOffset") { [weak self] result, error in
-            if let scrollY = result as? CGFloat {
-                self?.savedScrollPosition = scrollY
-            }
-
+        // Save scroll position before reloading (but not on initial load)
+        if isInitialLoad {
+            isInitialLoad = false
             // Load HTML with baseURL set to the markdown's directory
             // This allows loading remote images (http/https) while base64 handles local images
-            self?.webView?.loadHTMLString(fullHTML, baseURL: url.deletingLastPathComponent())
+            webView?.loadHTMLString(fullHTML, baseURL: url.deletingLastPathComponent())
+        } else {
+            webView?.evaluateJavaScript("window.pageYOffset") { [weak self] result, error in
+                if let scrollY = result as? CGFloat {
+                    self?.savedScrollPosition = scrollY
+                }
+
+                // Load HTML with baseURL set to the markdown's directory
+                // This allows loading remote images (http/https) while base64 handles local images
+                self?.webView?.loadHTMLString(fullHTML, baseURL: url.deletingLastPathComponent())
+            }
         }
     }
 
@@ -275,6 +289,19 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
         fileSystemSource = source
     }
 
+    func saveScrollPosition() {
+        // Save current scroll position to UserDefaults asynchronously
+        guard let fileURL = fileURL else { return }
+
+        webView?.evaluateJavaScript("window.pageYOffset") { [weak self] result, error in
+            if let scrollY = result as? CGFloat {
+                let key = "scroll_\(fileURL.path)"
+                UserDefaults.standard.set(Double(scrollY), forKey: key)
+                self?.savedScrollPosition = scrollY
+            }
+        }
+    }
+
     override func close() {
         fileSystemSource?.cancel()
         fileSystemSource = nil
@@ -322,6 +349,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             NSDocumentController.shared.openDocument(nil)
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Save scroll positions for all open documents before quitting
+        for document in NSDocumentController.shared.documents {
+            if let markdownDoc = document as? MarkdownDocument {
+                markdownDoc.saveScrollPosition()
+            }
+        }
+
+        // Run the runloop briefly to allow async JavaScript calls to complete
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+
+        // Force UserDefaults to save immediately
+        UserDefaults.standard.synchronize()
     }
 
     func updateRecentFilesMenu() {
