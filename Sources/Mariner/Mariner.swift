@@ -6,7 +6,7 @@ import cmark_gfm_extensions
 // MARK: - Markdown Document
 
 @objc(MarkdownDocument)
-class MarkdownDocument: NSDocument {
+class MarkdownDocument: NSDocument, WKNavigationDelegate {
     var webView: WKWebView!
     var fileSystemSource: DispatchSourceFileSystemObject?
     var markdownContent: String = ""
@@ -33,6 +33,7 @@ class MarkdownDocument: NSDocument {
 
         // Create WKWebView
         webView = WKWebView(frame: window.contentView!.bounds)
+        webView.navigationDelegate = self
         webView.autoresizingMask = [.width, .height]
         window.contentView?.addSubview(webView)
 
@@ -270,6 +271,26 @@ class MarkdownDocument: NSDocument {
         fileSystemSource?.cancel()
         fileSystemSource = nil
         super.close()
+    }
+
+    // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // Allow initial HTML load
+        if navigationAction.navigationType == .other {
+            decisionHandler(.allow)
+            return
+        }
+
+        // Open links in default browser
+        if navigationAction.navigationType == .linkActivated,
+           let url = navigationAction.request.url {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+
+        decisionHandler(.allow)
     }
 }
 
