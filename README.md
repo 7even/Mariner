@@ -30,17 +30,16 @@ A native macOS markdown viewer with GitHub-style rendering and live preview.
    cd Mariner
    ```
 
-3. **Build and run**:
+3. **Build and install**:
    ```bash
    ./build-app.sh
-   open Mariner.app
    ```
 
 The build script will:
 - Compile the Swift code
 - Download and build dependencies (cmark-gfm)
 - Create the app bundle
-- Place `Mariner.app` in the project directory
+- Install `Mariner.app` to `/Applications`
 
 ## Usage
 

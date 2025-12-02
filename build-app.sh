@@ -27,5 +27,10 @@ cp Info.plist "$APP_DIR/Info.plist"
 # Copy app icon
 cp Mariner.icns "$APP_DIR/Resources/Mariner.icns"
 
-echo "App bundle created: Mariner.app"
-echo "To run: open Mariner.app"
+# Install to /Applications
+echo "Installing to /Applications..."
+rm -rf /Applications/Mariner.app
+cp -r Mariner.app /Applications/
+
+echo "Mariner installed to /Applications"
+echo "To run: open -a Mariner"
