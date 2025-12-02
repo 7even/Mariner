@@ -344,11 +344,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup menu bar
         setupMenuBar()
+    }
 
-        // Show open panel on launch
-        DispatchQueue.main.async {
-            NSDocumentController.shared.openDocument(nil)
-        }
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        // Show open panel if no documents were restored
+        NSDocumentController.shared.openDocument(nil)
+        return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
