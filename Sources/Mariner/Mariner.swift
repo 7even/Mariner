@@ -1,5 +1,6 @@
 import Cocoa
 import WebKit
+import UniformTypeIdentifiers
 import cmark_gfm
 import cmark_gfm_extensions
 
@@ -85,6 +86,50 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
             windowControllers.first?.window?.title = "Mariner - \(fileName)"
         } else {
             windowControllers.first?.window?.title = "Mariner"
+        }
+    }
+
+    @objc func exportPDF(_ sender: Any?) {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.pdf]
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+
+        // Suggest filename based on markdown file name
+        if let fileURL = fileURL {
+            let baseFilename = fileURL.deletingPathExtension().lastPathComponent
+            savePanel.nameFieldStringValue = "\(baseFilename).pdf"
+        } else {
+            savePanel.nameFieldStringValue = "document.pdf"
+        }
+
+        guard let window = windowControllers.first?.window else { return }
+
+        savePanel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = savePanel.url else { return }
+
+            self.webView.createPDF { result in
+                switch result {
+                case .success(let data):
+                    do {
+                        try data.write(to: url)
+                    } catch {
+                        let alert = NSAlert()
+                        alert.messageText = "Failed to save PDF"
+                        alert.informativeText = error.localizedDescription
+                        alert.alertStyle = .critical
+                        alert.addButton(withTitle: "OK")
+                        alert.beginSheetModal(for: window)
+                    }
+                case .failure(let error):
+                    let alert = NSAlert()
+                    alert.messageText = "Failed to create PDF"
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .critical
+                    alert.addButton(withTitle: "OK")
+                    alert.beginSheetModal(for: window)
+                }
+            }
         }
     }
 
@@ -442,6 +487,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Populate with current recent files
         updateRecentFilesMenu()
 
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(withTitle: "Export PDF...", action: #selector(MarkdownDocument.exportPDF(_:)), keyEquivalent: "e")
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
