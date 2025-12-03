@@ -89,6 +89,18 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
         }
     }
 
+    @objc func zoomIn(_ sender: Any?) {
+        webView.pageZoom += 0.1
+    }
+
+    @objc func zoomOut(_ sender: Any?) {
+        webView.pageZoom = max(0.5, webView.pageZoom - 0.1)
+    }
+
+    @objc func resetZoom(_ sender: Any?) {
+        webView.pageZoom = 1.0
+    }
+
     @objc func exportPDF(_ sender: Any?) {
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.pdf]
@@ -503,6 +515,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
         mainMenu.addItem(editMenuItem)
+
+        // View Menu
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        viewMenuItem.submenu = viewMenu
+
+        viewMenu.addItem(withTitle: "Zoom In", action: #selector(MarkdownDocument.zoomIn(_:)), keyEquivalent: "+")
+        viewMenu.addItem(withTitle: "Zoom Out", action: #selector(MarkdownDocument.zoomOut(_:)), keyEquivalent: "-")
+        viewMenu.addItem(withTitle: "Actual Size", action: #selector(MarkdownDocument.resetZoom(_:)), keyEquivalent: "0")
+
+        mainMenu.addItem(viewMenuItem)
 
         // Window Menu
         let windowMenuItem = NSMenuItem()

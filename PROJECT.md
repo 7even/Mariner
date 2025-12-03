@@ -35,12 +35,27 @@ File Watcher → Detect Changes → Parse Markdown → Apply GitHub CSS → Disp
 
 ## Development Status
 
-Project initialized. Ready to begin development.
+### Completed
+- ✅ Swift project structure with Swift Package Manager
+- ✅ GitHub Flavored Markdown rendering using cmark-gfm
+- ✅ GitHub CSS styling with syntax highlighting
+- ✅ File system watcher for live preview
+- ✅ Document-based architecture for multiple windows
+- ✅ Recent files menu
+- ✅ Custom ship's wheel app icon
+- ✅ Image support (local and remote)
+- ✅ Links open in default browser
+- ✅ Scroll position preservation across reloads and app launches
+- ✅ Automatic document restoration on app relaunch
+- ✅ PDF export functionality (⌘E)
+- ✅ Installation to /Applications via build script
+- ✅ Zoom controls (⌘+, ⌘-, ⌘0)
 
-## Next Steps
+## Future Ideas
 
-1. Set up Swift project structure
-2. Implement basic markdown rendering
-3. Add GitHub CSS styling
-4. Implement file system watcher for live preview
-5. Build UI for file selection and display
+### Quick Look Extension
+Add a Quick Look extension to provide GitHub-styled markdown previews in Finder (when pressing Space on .md files). This would require:
+- Creating a Quick Look Extension target
+- Registering it to handle markdown files
+- Implementing preview generation using existing rendering code
+- Proper code signing and entitlements
