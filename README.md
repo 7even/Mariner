@@ -6,6 +6,7 @@ A native macOS markdown viewer with GitHub-style rendering and live preview.
 
 - **GitHub Flavored Markdown** - Full GFM support including tables, task lists, strikethrough, and autolinks
 - **Syntax Highlighting** - Code blocks with syntax highlighting for Swift, Rust, Go, Kotlin, Clojure, Elixir, and more
+- **Mermaid Diagrams** - Render flowcharts, sequence diagrams, and other Mermaid diagrams
 - **PDF Export** - Export rendered markdown to PDF with one click (⌘E)
 - **Live Preview** - Automatically reloads when markdown files change
 - **Multiple Windows** - Open multiple markdown files simultaneously in separate windows

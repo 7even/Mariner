@@ -211,6 +211,8 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
             <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/elixir.min.js"></script>
+            <!-- Mermaid diagram support -->
+            <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
             <style>
                 \(githubMarkdownCSS)
             </style>
@@ -220,11 +222,23 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
                 \(htmlWithEmbeddedImages)
             </article>
             <script>
-                // Apply syntax highlighting to all code blocks
+                // Apply syntax highlighting to all code blocks (except mermaid)
                 document.querySelectorAll('pre code').forEach((block) => {
-                    hljs.highlightElement(block);
+                    if (!block.classList.contains('language-mermaid')) {
+                        hljs.highlightElement(block);
+                    }
                 });
 
+                // Initialize Mermaid diagrams
+                mermaid.initialize({ startOnLoad: false, theme: 'default' });
+                document.querySelectorAll('pre code.language-mermaid').forEach((block) => {
+                    const pre = block.parentElement;
+                    const div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.textContent = block.textContent;
+                    pre.parentElement.replaceChild(div, pre);
+                });
+                mermaid.run();
             </script>
         </body>
         </html>
@@ -728,6 +742,12 @@ body {
 
 .markdown-body table tr:nth-child(2n) {
     background-color: #f6f8fa;
+}
+
+/* Mermaid diagrams */
+.markdown-body .mermaid {
+    text-align: center;
+    margin: 16px 0;
 }
 """
 
