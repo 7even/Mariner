@@ -163,8 +163,11 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
 
         markdownContent = content
 
+        // Extract YAML front matter if present
+        let (frontMatter, markdownBody) = extractFrontMatter(from: content)
+
         // Parse markdown using cmark-gfm with all GitHub extensions
-        let html = content.withCString { cString -> String in
+        let html = markdownBody.withCString { cString -> String in
             // Register GFM extensions
             cmark_gfm_core_extensions_ensure_registered()
 
@@ -195,6 +198,23 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
         // Convert local images to base64 data URLs
         let htmlWithEmbeddedImages = embedLocalImages(html: html, baseDirectory: url.deletingLastPathComponent())
 
+        // Inject front matter badges after the first h1 if present
+        let badgesHTML = frontMatter.badgesHTML()
+        let finalHTML: String
+        if !badgesHTML.isEmpty {
+            // Try to insert badges after the closing </h1> tag
+            if let h1Range = htmlWithEmbeddedImages.range(of: "</h1>") {
+                var modifiedHTML = htmlWithEmbeddedImages
+                modifiedHTML.insert(contentsOf: "\n\(badgesHTML)", at: h1Range.upperBound)
+                finalHTML = modifiedHTML
+            } else {
+                // No h1 found, prepend badges
+                finalHTML = badgesHTML + "\n" + htmlWithEmbeddedImages
+            }
+        } else {
+            finalHTML = htmlWithEmbeddedImages
+        }
+
         // Create full HTML with GitHub styling
         let fullHTML = """
         <!DOCTYPE html>
@@ -219,7 +239,7 @@ class MarkdownDocument: NSDocument, WKNavigationDelegate {
         </head>
         <body>
             <article class="markdown-body">
-                \(htmlWithEmbeddedImages)
+                \(finalHTML)
             </article>
             <script>
                 // Apply syntax highlighting to all code blocks (except mermaid)
@@ -569,6 +589,152 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// MARK: - YAML Front Matter Parsing
+
+struct FrontMatter {
+    var fields: [(key: String, value: String)] = []
+
+    var isEmpty: Bool { fields.isEmpty }
+
+    func badgesHTML() -> String {
+        guard !isEmpty else { return "" }
+
+        var badges: [String] = []
+
+        for (key, value) in fields {
+            // Skip empty values
+            let trimmedValue = value.trimmingCharacters(in: .whitespaces)
+            if trimmedValue.isEmpty || trimmedValue == "[]" { continue }
+
+            // Determine badge style based on key
+            let badgeClass: String
+            switch key.lowercased() {
+            case "status":
+                // Handle "superseded by ADR-xxx" as just "superseded"
+                let statusValue = trimmedValue.lowercased()
+                let statusClass = statusValue.hasPrefix("superseded") ? "superseded" : statusValue
+                badgeClass = "badge-status badge-status-\(statusClass)"
+            case "date":
+                badgeClass = "badge-date"
+            case "decision-makers", "deciders":
+                badgeClass = "badge-people badge-deciders"
+            case "consulted":
+                badgeClass = "badge-people badge-consulted"
+            case "informed":
+                badgeClass = "badge-people badge-informed"
+            default:
+                badgeClass = "badge-default"
+            }
+
+            // Format display label
+            let displayKey = key.replacingOccurrences(of: "-", with: " ").capitalized
+
+            badges.append("""
+                <span class="front-matter-badge \(badgeClass)">
+                    <span class="badge-label">\(displayKey):</span>
+                    <span class="badge-value">\(escapeHTML(trimmedValue))</span>
+                </span>
+                """)
+        }
+
+        guard !badges.isEmpty else { return "" }
+
+        return """
+            <div class="front-matter-badges">
+                \(badges.joined(separator: "\n        "))
+            </div>
+            """
+    }
+
+    private func escapeHTML(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+}
+
+func extractFrontMatter(from content: String) -> (frontMatter: FrontMatter, body: String) {
+    // Check if content starts with ---
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasPrefix("---") else {
+        return (FrontMatter(), content)
+    }
+
+    // Find the closing ---
+    let lines = content.components(separatedBy: .newlines)
+    var yamlLines: [String] = []
+    var bodyStartIndex = 0
+    var foundStart = false
+    var foundEnd = false
+
+    for (index, line) in lines.enumerated() {
+        let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+        if trimmedLine == "---" {
+            if !foundStart {
+                foundStart = true
+                continue
+            } else {
+                foundEnd = true
+                bodyStartIndex = index + 1
+                break
+            }
+        }
+        if foundStart && !foundEnd {
+            yamlLines.append(line)
+        }
+    }
+
+    guard foundEnd else {
+        return (FrontMatter(), content)
+    }
+
+    // Parse simple YAML (key: value pairs and lists)
+    var frontMatter = FrontMatter()
+    var currentKey: String?
+    var currentListItems: [String] = []
+
+    for line in yamlLines {
+        let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+        if trimmedLine.isEmpty { continue }
+
+        // Check if it's a list item (starts with -)
+        if trimmedLine.hasPrefix("- ") {
+            let item = String(trimmedLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            currentListItems.append(item)
+        } else if let colonIndex = trimmedLine.firstIndex(of: ":") {
+            // Save previous key if it had list items
+            if let key = currentKey, !currentListItems.isEmpty {
+                frontMatter.fields.append((key: key, value: currentListItems.joined(separator: ", ")))
+                currentListItems = []
+            }
+
+            let key = String(trimmedLine[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+            let value = String(trimmedLine[trimmedLine.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+
+            if value.isEmpty {
+                // This key has list values on following lines
+                currentKey = key
+            } else {
+                frontMatter.fields.append((key: key, value: value))
+                currentKey = nil
+            }
+        }
+    }
+
+    // Don't forget the last key if it had list items
+    if let key = currentKey, !currentListItems.isEmpty {
+        frontMatter.fields.append((key: key, value: currentListItems.joined(separator: ", ")))
+    }
+
+    // Reconstruct body without front matter
+    let bodyLines = Array(lines[bodyStartIndex...])
+    let body = bodyLines.joined(separator: "\n")
+
+    return (frontMatter, body)
+}
+
 // MARK: - GitHub CSS
 
 let githubMarkdownCSS = """
@@ -749,6 +915,52 @@ body {
     text-align: center;
     margin: 16px 0;
 }
+
+/* Front matter badges */
+.front-matter-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #eaecef;
+}
+
+.front-matter-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background-color: #f1f3f5;
+    color: #495057;
+}
+
+.front-matter-badge .badge-label {
+    font-weight: 500;
+    margin-right: 4px;
+    color: #868e96;
+}
+
+.front-matter-badge .badge-value {
+    font-weight: 500;
+}
+
+/* Status badges with semantic colors (MADR standard statuses) */
+.badge-status-proposed { background-color: #fff3cd; color: #856404; }
+.badge-status-accepted { background-color: #d4edda; color: #155724; }
+.badge-status-rejected { background-color: #f8d7da; color: #721c24; }
+.badge-status-deprecated { background-color: #e2e3e5; color: #383d41; }
+.badge-status-superseded { background-color: #e2e3e5; color: #383d41; }
+
+/* Date badge */
+.badge-date { background-color: #e7f5ff; color: #1864ab; }
+
+/* People badges */
+.badge-deciders { background-color: #f3e5f5; color: #7b1fa2; }
+.badge-consulted { background-color: #e8f5e9; color: #2e7d32; }
+.badge-informed { background-color: #fff8e1; color: #f57f17; }
 """
 
 // MARK: - Main Entry Point
